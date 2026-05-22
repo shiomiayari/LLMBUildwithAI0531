@@ -62,9 +62,9 @@ Duration: 25
 
 まずは開発用のフォルダを作成し、Pythonの仮想環境と必要なパッケージをインストールします。
 
-Negative
-: **重要（推奨環境）**:
-  本ハンズオンは **Python 3.10 〜 3.11** の環境を推奨します。Python 3.12以降では、一部のMediaPipeバイナリビルドとの互換性エラーが発生する場合があります。
+> aside negative
+> **重要（推奨環境）**:
+> 本ハンズオンは **Python 3.10 〜 3.11** の環境を推奨します。Python 3.12以降では、一部のMediaPipeバイナリビルドとの互換性エラーが発生する場合があります。
 
 ---
 
@@ -128,9 +128,9 @@ gemini-nano-agent/
 ### ステップ 2-4: モデルファイルの配置
 事前にKaggle ModelsからダウンロードしたMediaPipe用「Gemma 4 E2B」モデルファイル（`gemma-4-e2b-it-cpu-int4.task` など）を、`models/` フォルダの直下に配置し、ファイル名を `gemma-4-e2b-it.task` に変更してください。
 
-Positive
-: **モデルの入手方法**:
-  Gemma 4は公式の **[Kaggle Models](https://www.kaggle.com/models)** からダウンロードできます。「Gemma 4」を検索し、利用規約に同意した上で、MediaPipe/LiteRT向けの `.task` 形式（または `.tflite` / `.bin`）のファイルをダウンロードしてください。
+> aside positive
+> **モデルの入手方法**:
+> Gemma 4は公式の **[Kaggle Models](https://www.kaggle.com/models)** からダウンロードできます。「Gemma 4」を検索し、利用規約に同意した上で、MediaPipe/LiteRT向けの `.task` 形式（または `.tflite` / `.bin`）のファイルをダウンロードしてください。
 
 ---
 

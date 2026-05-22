@@ -16,24 +16,24 @@ graph TD
     classDef codeStyle fill:#E3F2FD,stroke:#2196F3,stroke-width:2px,color:#0D47A1;
     classDef modelStyle fill:#E8F5E9,stroke:#4CAF50,stroke-width:2px,color:#1B5E20;
 
-    subgraph UserPC [💻 ローカルPC (100% オフライン / プライベート)]
+    subgraph UserPC ["💻 ローカルPC (100% オフライン / プライベート)"]
         direction TB
 
         InputLog["📄 inputs/system_log.txt<br/>(解析対象のシステムログ)"]:::fileStyle
         
-        subgraph AgentScript [🐍 agent.py]
+        subgraph AgentScript ["🐍 agent.py"]
             direction TB
-            ReadLog["1. ログファイルの読込"]
-            FormatPrompt["2. Few-shotプロンプトの構築<br/>(コンテキストエンジニアリング)"]
-            RunInference["3. 推論リクエスト"]
-            ParseJSON["4. レスポンスのパース"]
+            ReadLog["1. ログファイルの読込"]:::codeStyle
+            FormatPrompt["2. Few-shotプロンプトの構築<br/>(コンテキストエンジニアリング)"]:::codeStyle
+            RunInference["3. 推論リクエスト"]:::codeStyle
+            ParseJSON["4. レスポンスのパース"]:::codeStyle
             
             ReadLog --> FormatPrompt
             FormatPrompt --> RunInference
             RunInference --> ParseJSON
         end
 
-        subgraph GoogleAIEdge [🛠️ Google AI Edge 実行環境]
+        subgraph GoogleAIEdge ["🛠️ Google AI Edge 実行環境"]
             MPAPI["MediaPipe LLM Inference API"]
             GemmaModel["🧠 Gemma 4 E2B モデル<br/>(gemma-4-e2b-it.task)"]:::modelStyle
             
@@ -47,10 +47,6 @@ graph TD
         RunInference <--> MPAPI
         ParseJSON --> OutputReport
     end
-
-    %% Apply styles
-    class InputLog,OutputReport fileStyle;
-    class ReadLog,FormatPrompt,RunInference,ParseJSON codeStyle;
 ```
 
 ---
