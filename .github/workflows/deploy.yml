@@ -1,0 +1,63 @@
+name: Deploy Codelabs to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'codelab.md'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch: # Allows manual triggering from the Actions tab
+
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one active deployment
+concurrency:
+  group: 'pages'
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - name: Install claat
+        run: go install github.com/googlecodelabs/tools/claat@latest
+
+      - name: Build Codelab
+        run: |
+          # Run claat export (installed via go install, automatically in PATH)
+          claat export codelab.md
+
+      - name: Prepare Pages Directory
+        run: |
+          # Copy the generated codelab contents to a 'public' directory
+          # so that the codelab is served directly from the root URL.
+          mkdir public
+          cp -r gemini-nano-local-agent/* public/
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './public'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

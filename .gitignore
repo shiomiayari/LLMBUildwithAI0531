@@ -1,0 +1,26 @@
+# Google Codelabs binaries
+claat.exe
+claat-windows-amd64.exe
+
+# Generated codelab folders
+gemini-nano-local-agent/
+
+# Python Virtual Environment
+.venv/
+venv/
+ENV/
+
+# Python cache & build files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Hands-on temporary folders
+models/
+inputs/
+outputs/
+
+# OS specific files
+.DS_Store
+Thumbs.db
