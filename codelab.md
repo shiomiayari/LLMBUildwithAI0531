@@ -8,85 +8,140 @@ author: Ayari Shiomi
 
 # CodeLab：Gemini Nano と Google AI Edge で構築するローカル・プライベートエージェント
 
-## 1. 概要
-Duration: 20
+## 1. 概要 & なぜオンデバイスAIなのか？
+Duration: 15
 
-本ハンズオンでは、GoogleのオンデバイスAI向け軽量LLMである「Gemini Nano（MediaPipe LLM Inference API）」を使用し、外部にデータを一切送信しない完全ローカル完結型の「プライベートログ解析エージェント」を構築します。
+本ハンズオンでは、GoogleのオンデバイスAI向け軽量LLMである「**Gemini Nano（MediaPipe LLM Inference API）**」を使用し、外部にデータを一切送信しない完全ローカル完結型の「**プライベートログ解析エージェント**」を構築します。
 
-巨大なクラウドLLMに頼るのではなく、限られたリソースの軽量モデルをいかに「コンテキストエンジニアリング」と「Few-shot」で制御し、実用的なタスクを自律的に実行（エージェント化）させるかを学びます。また、ワークショップの最後には、ストレージを圧迫しないようプログラムによるクリーンアップまで行います。
+### 💡 なぜ今、オンデバイスAIなのか？
+クラウドLLM（Gemini 2.0 Flash/Pro等）は極めて強力ですが、実務で導入する際には以下の「3つの壁」に直面します。
 
-### 学習目標
-- オンデバイスAI（Gemini Nano）と Google AI Edge / MediaPipe の基礎の理解
-- 軽量LLMを最大限活かすためのコンテキストエンジニアリング・Few-shot プロンプティングの習得
-- Pythonを用いたローカルエージェントの作成と自動ファイルレポート生成
-- 不要になったモデルファイルや環境のクリーンアップ処理の自動化
+1. **データプライバシーの壁**: 社外秘のシステムログや個人情報をクラウドに送信できない。
+2. **コストの壁**: 大量のログ分析を24時間クラウドAPIで回すと、莫大なリクエスト費用がかかる。
+3. **レイテンシ・ネットワークの壁**: ネットワーク遅延が発生する、またはオフライン環境（工場や機密エリア）では動作しない。
+
+オンデバイスAIは、これらの問題を**「手元のPCの計算資源だけで動かす」**ことで根本から解決します。
+
+---
+
+### 🛠️ ローカルエージェントのデータフロー図
+
+本ハンズオンで構築するエージェントのアーキテクチャです。入力から出力まで、データは1バイトもローカルPCの外に出ません。
+
+```plaintext
+[入力: system_log.txt] (ローカルの障害ログ)
+          │
+          ▼ (Pythonでファイル読み込み)
+[コンテキスト・エンジニアリング] (プロンプト＋Few-shotの整形)
+          │
+          ▼ (MediaPipe LLM Inference API経由でロード)
+┌──────────────────────────────────────────────┐
+│  💻 ローカルPC内の計算資源 (CPU/GPU)          │
+│  🤖 Gemini Nano (完全にオフラインで推論実行)    │
+└──────────────────────────────────────────────┘
+          │
+          ▼ (構造化JSONデータの出力)
+[自動アクション実行] (JSONパース ➡️ ファイル保存)
+          │
+          ▼
+[出力: incident_report.json] (ローカルに保存)
+```
+
+---
+
+### 🎯 このハンズオンで学べること
+- **オンデバイスAIの基本**: MediaPipeを用いた軽量モデルのロードと実行方法。
+- **コンテキストエンジニアリングの真髄**: 巨大モデルと異なり、「少し賢さに制限のある」軽量モデルを、Few-shotプロンプトによって劇的に賢く動かすテクニック。
+- **エージェント化の基礎**: LLMの出力をプログラムで受け取り、次のアクション（ファイル保存）に自動で繋げるパイプライン設計。
+- **リソース管理の実践**: 数GBあるモデルファイルや一時ファイルを、プログラムから綺麗に消去するクリーンアップ設計。
 
 ---
 
 ## 2. 事前準備と環境構築
-Duration: 30
+Duration: 25
 
-まずは開発環境を整えます。Python 3.10 〜 3.11 の環境を推奨します。
+まずは開発用のフォルダを作成し、Pythonの仮想環境と必要なパッケージをインストールします。
+
+Negative
+: **重要（推奨環境）**:
+  本ハンズオンは **Python 3.10 〜 3.11** の環境を推奨します。Python 3.12以降では、一部のMediaPipeバイナリビルドとの互換性エラーが発生する場合があります。
+
+---
 
 ### ステップ 2-1: プロジェクトの作成と仮想環境の構築
-ターミナルを開き、任意の場所に作業ディレクトリを作成して移動します。
+ターミナルを開き、以下のコマンドを順に実行して環境を作成します。
 
 ```bash
+# プロジェクトフォルダを作成して移動
 mkdir gemini-nano-agent
 cd gemini-nano-agent
-```
 
-Pythonの仮想環境（venv）を作成し、アクティベートします。
-
-```bash
-# macOS / Linux
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Windows
+# 仮想環境（.venv）の作成
+# Windowsの場合
 python -m venv .venv
 .venv\Scripts\activate
+
+# macOS / Linuxの場合
+python3 -m venv .venv
+source .venv/bin/activate
 ```
 
+---
+
 ### ステップ 2-2: 必要なライブラリのインストール
-Google AI Edgeを動かすための `mediapipe` と、本タスクに必要なパッケージをインストールします。
+Google AI Edgeを動かすための `mediapipe` と、関連ツールをインストールします。
 
 ```bash
+# pip自体を最新化
 pip install --upgrade pip
+
+# MediaPipeのインストール (Google AI EdgeのPythonハーネスを含みます)
 pip install mediapipe
 ```
 
+---
+
 ### ステップ 2-3: ディレクトリ構造の作成
-以下のコマンド（またはエディタ）で、必要なフォルダとファイルを作成しておきます。
+以下のフォルダと空のスクリプトファイルを作成します。
 
 ```bash
 mkdir models inputs outputs
 touch agent.py cleanup.py
 ```
 
-最終的な構成は以下のようになります：
+最終的なディレクトリ構成は以下のようになります：
 
 ```plaintext
 gemini-nano-agent/
-├── .venv/
+├── .venv/                   # Python仮想環境
 ├── models/
-│   └── (ここにモデルファイルを配置)
+│   └── gemini_nano.bin      # 【重要】ここにモデルファイルを配置します
 ├── inputs/
-│   └── system_log.txt
-├── outputs/
-├── agent.py
-└── cleanup.py
+│   └── system_log.txt       # 解析対象のログファイル（自動生成されます）
+├── outputs/                 # 解析レポートが出力されるフォルダ
+├── agent.py                 # エージェントのメインプログラム
+└── cleanup.py               # クリーンアッププログラム
 ```
 
+---
+
 ### ステップ 2-4: モデルファイルの配置
-事前にダウンロード（または運営から配布）された、MediaPipe用のGemini Nanoモデルファイル（例：`gemini_nano.bin` や `gemma-2b-it-cpu-int4.bin` などのGoogle AI Edge用互換モデル）を、`models/` ディレクトリの直下に配置してください。
+運営から配布された（または事前にダウンロードした）MediaPipe用のGemini Nanoモデルファイル（`gemini_nano.bin`）を、`models/` フォルダの直下に配置してください。
+
+Positive
+: **モデルファイルについて**:
+  このファイル（約1.2GB）は、Gemini Nanoがローカルで動作するために必要な「重み（パラメータ）データ」そのものです。クラウドAPIキーは一切必要ありません。
 
 ---
 
 ## 3. 【演習】エージェントの実装（穴埋めワーク）
 Duration: 50
 
-`agent.py` を開き、以下のコードベースを記述（またはコピー）してください。中級者の方向けに、コンテキストの注入部分やプロンプトの設計部分が `【TODO】` になっています。制限時間内で実装を完成させましょう。
+`agent.py` を開き、以下のテンプレートコードを貼り付けてください。
+
+このコードには、**【TODO 1】**（コンテキストエンジニアリングとFew-shotプロンプトの設計）と、**【TODO 2】**（エージェントが出力したレポートのファイル保存）の2つの未完成部分があります。
+
+### agent.py のコードテンプレート
 
 ```python
 import os
@@ -96,7 +151,7 @@ from mediapipe.tasks.python.genai import llm_inference
 # ==========================================
 # 設定・パスの定義
 # ==========================================
-MODEL_PATH = "./models/gemini_nano.bin"  # 配置したモデル名に合わせて変更してください
+MODEL_PATH = "./models/gemini_nano.bin"
 LOG_FILE_PATH = "./inputs/system_log.txt"
 OUTPUT_DIR = "./outputs"
 
@@ -109,7 +164,7 @@ def init_llm():
     options = llm_inference.LlmInferenceOptions(
         model_asset_path=MODEL_PATH,
         max_tokens=1024,
-        temperature=0.2, # 決定論的な出力を得るために低めに設定
+        temperature=0.2, # 決定論的なJSON出力を得るために低めに設定
         top_k=40
     )
     llm = llm_inference.LlmInference.create_from_options(options)
@@ -138,7 +193,7 @@ def run_agent(llm):
     # テストログの準備
     prepare_inputs()
     
-    # 1. ローカルファイルの読み込み（コンテキストエンジニアリングの準備）
+    # 1. ローカルファイルの読み込み
     with open(LOG_FILE_PATH, "r", encoding="utf-8") as f:
         raw_log_data = f.read()
 
@@ -148,25 +203,7 @@ def run_agent(llm):
     # 軽量モデル（Nano）に正確なインシデントレポートを出力させるため、
     # 思考プロセス（Chain of Thought）の手本を含むFew-shotプロンプトを構築してください。
     # -------------------------------------------------------------
-    prompt = f"""You are an expert site reliability engineering (SRE) agent.
-Analyze the following system logs and generate a structured incident report.
-
-# Output Format Specification
-Your response MUST be in raw JSON format using this schema:
-{{
-  "severity": "FATAL" or "ERROR" or "WARN",
-  "root_cause": "Brief description of why the failure happened",
-  "impact": "What is the current business/system impact",
-  "next_action": "Immediate step for engineers to take"
-}}
-
-# Example (Few-shot)
-Log: 2026-05-01 10:00:00 [ERROR] [disk] Disk space 99%. 2026-05-01 10:01:00 [FATAL] [db] Cannot write to disk, shutting down.
-Response: {{"severity": "FATAL", "root_cause": "Disk space exhaustion leading to database shutdown", "impact": "Database is offline, completely stopping all application services", "next_action": "Allocate more storage to the DB volume and restart the service"}}
-
-# Target Log to Analyze
-Log: {raw_log_data}
-Response:"""
+    prompt = f"""ここにプロンプトを記述してください"""
 
     print("\n🔍 エージェントがローカルログの解析を開始します...")
     start_time = time.time()
@@ -185,12 +222,7 @@ Response:"""
     # エージェントの出力を "./outputs/incident_report.json" として
     # 自動保存するロジックを実装してください。
     # -------------------------------------------------------------
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    report_path = os.path.join(OUTPUT_DIR, "incident_report.json")
-    
-    with open(report_path, "w", encoding="utf-8") as f:
-        f.write(response)
-    print(f"💾 レポートをローカルに保存しました: {report_path}")
+    # ここにファイル書き込みロジックを実装してください
 
 if __name__ == "__main__":
     # 初期化と実行
@@ -198,11 +230,32 @@ if __name__ == "__main__":
     run_agent(llm)
 ```
 
-### 実装後の実行
-TODOを埋めたら、スクリプトを実行してエージェントを動かしてみましょう。ネットワークが遮断されたオフライン状態でも、爆速で解析が行われレポートが出力されることを確認してください。
+---
 
-```bash
-python agent.py
+### 💡 実装のヒント
+
+#### **【TODO 1】プロンプトの設計**
+Gemini Nanoのような軽量モデルは、複雑な指示を一度に受けるとフォーマットを崩しがちです。以下の要素を意識してプロンプト（`prompt` 変数）を書き換えてみましょう。
+- **役割の定義 (Role)**: 「あなたは優秀なSRE（Site Reliability Engineer）エージェントです」
+- **出力形式の厳密な指定**: JSONのキー名（`severity`, `root_cause`, `impact`, `next_action`）を明示的に指定します。
+- **Few-shot (例示)**: 「このようなログが入力されたら、このようにJSONを出力する」という具体的な入出力例（1〜2パターン）をプロンプト内に含める。
+
+#### **【TODO 2】ファイル保存の実装**
+`response` にはGemini Nanoから返ってきた文字列（JSON形式を期待）が格納されています。`outputs/` フォルダの中に `incident_report.json` という名前で保存するコード（`open()` 関数などを使用）を記述します。
+
+---
+
+### 🏁 期待される実行結果
+
+実装が完成し、`python agent.py` を実行すると、以下のように完全にパース可能なJSONレポートが出力され、ファイルとしてローカルに保存されます。
+
+```json
+{
+  "severity": "FATAL",
+  "root_cause": "auth-service became unresponsive due to connection pool exhaustion and database timeouts, triggering the gateway circuit breaker",
+  "impact": "All incoming login requests are blocked, causing full authentication outage for users",
+  "next_action": "Check database server load, scale connection pool size of auth-service, and reset the gateway circuit breaker"
+}
 ```
 
 ---
@@ -210,9 +263,9 @@ python agent.py
 ## 4. クリーンアップの実装（PCの環境美化）
 Duration: 15
 
-開発者として、検証が終わった後のリソース管理（クリーンアップ）まで自動化することは重要なプラクティスです。特に数GBあるモデルファイルはストレージを圧迫するため、プログラムを書いて綺麗に片付けます。
+検証や開発が終わった後、環境をきれいに片付けることは本番運用の設計（SRE）においても非常に重要なプラクティスです。特に今回のモデルファイルは**1GB以上**あり、放置するとPCのストレージを圧迫します。
 
-`cleanup.py` を開き、以下のコードを記述して実行してください。
+`cleanup.py` を開き、以下のプログラムを記述してください。
 
 ```python
 import os
@@ -222,7 +275,6 @@ def cleanup_workspace():
     print("🧹 GDGハンズオン環境のクリーンアップを開始します...")
     
     # 1. 重いモデルファイルの削除
-    # (注意: 他のプロジェクトで再利用したい場合は、手動で退避させてください)
     model_dir = "./models"
     if os.path.exists(model_dir):
         print(f"⚠️ {model_dir} 内の大きなモデルファイルを削除しています...")
@@ -236,11 +288,11 @@ def cleanup_workspace():
             print(f"✅ 一時フォルダを削除しました: {target_dir}")
             
     print("\n✨ すべてのローカルデータクリーンアップが完了しました！")
-    print("💡 最後に、このターミナルウィンドウを閉じるか `deactivate` を実行し、")
-    print("   `rm -rf gemini-nano-agent` を実行すれば、仮想環境も含めて完全に元通りになります。")
+    print("💡 最後に、このターミナルで `deactivate` を実行し、")
+    print("   作業フォルダ自体（gemini-nano-agent）を削除すれば完全に元通りになります。")
 
 if __name__ == "__main__":
-    # 誤爆防止の確認
+    # 誤操作による削除を防ぐための安全プロンプト
     confirm = input("ハンズオンの成果物およびモデルファイルを完全に削除しますか？ (y/N): ")
     if confirm.lower() == 'y':
         cleanup_workspace()
@@ -248,20 +300,34 @@ if __name__ == "__main__":
         print("❌ クリーンアップはキャンセルされました。")
 ```
 
-### 実行コマンド
+### クリーンアップの実行
+完了したら、以下のコマンドでクリーンアップを実行します。
+
 ```bash
 python cleanup.py
 ```
 
 ---
 
-## 5. 【中級者向けディスカッション・考察ポイント】
-Duration: 20
+## 5. 【中級者向け】ディスカッション & 深掘り考察
+Duration: 15
 
-無事に動いた方は、セッションのテーマである「コンテキストエンジニアリング」「ハーネス」「LLMOps」に絡めて以下の点を考えてみましょう。
+無事にエージェントが動作した方は、本日のテーマであるオンデバイスAIエージェントの設計思想について深く考えてみましょう。
 
-### コンテキストエンジニアリング（プロンプト設計）の依存度
-Gemini 2.0 Proなどの巨大モデルであれば、フォーマット指定が雑でもJSONを綺麗に吐き出します。しかし、Gemini Nanoのような軽量モデルでは、少しプロンプトの記述を変える（Few-shotを抜く、など）だけで、簡単にJSON構造が壊れたりハルシネーションを起こしたりします。「モデルのサイズに合わせてインプット（コンテキスト）の質を極限まで高める」ことの重要性を実感できたでしょうか。
+### 🧠 考察 1：軽量モデルにおける「コンテキストエンジニアリング」の重要性
+Gemini 2.0 Proのような数千億〜数兆パラメータを持つ巨大モデルであれば、適当なプロンプトでも綺麗にJSONを吐き出します。
+しかし、1B〜2B（10〜20億パラメータ）クラスのGemini Nanoは、**「プロンプトの設計（コンテキストエンジニアリング）」**によって出力品質が天と地ほど変わります。
 
-### オンデバイス運用のLLMOps
-今回は手動でモデルを配置し、手動で消去しました。しかし実際のプロダクト（スマホアプリやブラウザアプリ）に組み込む場合、「ユーザーに数GBのモデルをどうやってダウンロードさせるか」「モデルのアップデート（バージョン管理）をどう配信するか」「不要になった瞬間のキャッシュクリアをどうOSレベルでハンドリングするか」が、Edge領域におけるLLMOpsの非常に面白い戦いどころになります。
+* プロンプトから **Few-shot（例示）** を抜いて実行してみましょう。出力はどう変化しますか？
+* JSONフォーマットが崩れたり、英語での指示に対して日本語で答えるのを忘れてハルシネーション（嘘の出力）を起こしたりしませんでしたか？
+* **結論**: オンデバイスAIを実務で使う上で、エンジニアの「インプット（文脈）を最適化する技術」はクラウド以上に不可欠なスキルになります。
+
+---
+
+### 🌐 考察 2：オンデバイスAIにおける「LLMOps」の課題
+今回は自分のPC上で手動でモデルを配置し、スクリプトで削除しました。しかし、これを実際のプロダクト（Webブラウザやスマートフォンアプリ）として一般ユーザーに届ける場合、以下のような特有の課題が生じます。
+
+1. **モデルの配信方法**: ユーザーに毎回1GB以上のモデルをダウンロードさせるわけにはいかない。
+   * ➡️ *解決策の例*: Chrome Built-in AI（ChromeブラウザがOS経由で一度だけモデルをバックグラウンドダウンロードする仕組み）の活用。
+2. **ハイブリッド運用（Cloud + Edge）**: 
+   * ➡️ 全ての推論をクラウドに投げると破産するため、「個人情報のマスキングや簡単な一次分類はデバイス上のGemini Nanoで行い、より複雑な論理思考が必要な箇所だけ Vertex AI（Gemini 2.0 Pro）に転送する」といったシステム設計（ハイブリッドLLMアーキテクチャ）が今後の主流になります。
